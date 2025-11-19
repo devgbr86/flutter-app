@@ -1,8 +1,10 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'dart:io';
+import 'package:image_picker/image_picker.dart';
 
 class CadastroPage extends StatefulWidget {
-  const CadastroPage({super.key});
+  const CadastroPage({Key? key}) : super(key: key);
 
   @override
   State<CadastroPage> createState() => _CadastroPageState();
@@ -14,16 +16,13 @@ class _CadastroPageState extends State<CadastroPage> {
   final _cpfController = TextEditingController();
   final _telefoneController = TextEditingController();
   final _emailController = TextEditingController();
-  final _senhaController = TextEditingController();
-  final _confirmarSenhaController = TextEditingController();
-  final _placaMotoController = TextEditingController();
-  final _modeloMotoController = TextEditingController();
-  final _cnhController = TextEditingController();
+  final _modeloVeiculoController = TextEditingController();
+  final _placaVeiculoController = TextEditingController();
 
-  bool _senhaVisivel = false;
-  bool _confirmarSenhaVisivel = false;
+  String _tipoVeiculo = 'Moto';
+  File? _imagemPerfil;
+  final ImagePicker _picker = ImagePicker();
   bool _isLoading = false;
-  bool _aceitouTermos = false;
 
   @override
   void dispose() {
@@ -31,84 +30,222 @@ class _CadastroPageState extends State<CadastroPage> {
     _cpfController.dispose();
     _telefoneController.dispose();
     _emailController.dispose();
-    _senhaController.dispose();
-    _confirmarSenhaController.dispose();
-    _placaMotoController.dispose();
-    _modeloMotoController.dispose();
-    _cnhController.dispose();
+    _modeloVeiculoController.dispose();
+    _placaVeiculoController.dispose();
     super.dispose();
   }
 
-  // Validação de CPF básica
-  bool _validarCPF(String cpf) {
-    cpf = cpf.replaceAll(RegExp(r'[^0-9]'), '');
-    if (cpf.length != 11) return false;
-    if (RegExp(r'^(\d)\1*$').hasMatch(cpf)) return false;
-    return true;
-  }
+  Future<void> _selecionarImagem(ImageSource source) async {
+    try {
+      final XFile? image = await _picker.pickImage(
+        source: source,
+        maxWidth: 1080,
+        maxHeight: 1080,
+        imageQuality: 85,
+      );
 
-  // Validação de email
-  bool _validarEmail(String email) {
-    final emailRegex = RegExp(r'^[\w-\.]+@([\w-]+\.)+[\w-]{2,4}$');
-    return emailRegex.hasMatch(email);
-  }
-
-  void _realizarCadastro() async {
-    if (!_aceitouTermos) {
+      if (image != null) {
+        setState(() {
+          _imagemPerfil = File(image.path);
+        });
+      }
+    } catch (e) {
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('Você precisa aceitar os termos de uso'),
+        SnackBar(
+          content: Text('Erro ao selecionar imagem: $e'),
           backgroundColor: Colors.red,
         ),
       );
-      return;
     }
+  }
 
+  void _mostrarOpcoesImagem() {
+    showModalBottomSheet(
+      context: context,
+      builder: (context) => SafeArea(
+        child: Wrap(
+          children: [
+            ListTile(
+              leading: const Icon(Icons.photo_camera),
+              title: const Text('Tirar Foto'),
+              onTap: () {
+                Navigator.pop(context);
+                _selecionarImagem(ImageSource.camera);
+              },
+            ),
+            ListTile(
+              leading: const Icon(Icons.photo_library),
+              title: const Text('Escolher da Galeria'),
+              onTap: () {
+                Navigator.pop(context);
+                _selecionarImagem(ImageSource.gallery);
+              },
+            ),
+            if (_imagemPerfil != null)
+              ListTile(
+                leading: const Icon(Icons.delete, color: Colors.red),
+                title: const Text(
+                  'Remover Foto',
+                  style: TextStyle(color: Colors.red),
+                ),
+                onTap: () {
+                  Navigator.pop(context);
+                  setState(() {
+                    _imagemPerfil = null;
+                  });
+                },
+              ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  String _formatarCPF(String cpf) {
+    cpf = cpf.replaceAll(RegExp(r'\D'), '');
+    if (cpf.length <= 3) return cpf;
+    if (cpf.length <= 6) return '${cpf.substring(0, 3)}.${cpf.substring(3)}';
+    if (cpf.length <= 9)
+      return '${cpf.substring(0, 3)}.${cpf.substring(3, 6)}.${cpf.substring(6)}';
+    return '${cpf.substring(0, 3)}.${cpf.substring(3, 6)}.${cpf.substring(6, 9)}-${cpf.substring(9, 11)}';
+  }
+
+  String _formatarTelefone(String telefone) {
+    telefone = telefone.replaceAll(RegExp(r'\D'), '');
+    if (telefone.length <= 2) return telefone;
+    if (telefone.length <= 7)
+      return '(${telefone.substring(0, 2)}) ${telefone.substring(2)}';
+    if (telefone.length <= 11) {
+      return '(${telefone.substring(0, 2)}) ${telefone.substring(2, 7)}-${telefone.substring(7)}';
+    }
+    return '(${telefone.substring(0, 2)}) ${telefone.substring(2, 7)}-${telefone.substring(7, 11)}';
+  }
+
+  String _formatarPlaca(String placa) {
+    placa = placa.toUpperCase().replaceAll(RegExp(r'[^A-Z0-9]'), '');
+    if (placa.length <= 3) return placa;
+    if (placa.length <= 7)
+      return '${placa.substring(0, 3)}-${placa.substring(3)}';
+    return '${placa.substring(0, 3)}-${placa.substring(3, 7)}';
+  }
+
+  bool _validarCPF(String cpf) {
+    cpf = cpf.replaceAll(RegExp(r'\D'), '');
+    if (cpf.length != 11) return false;
+
+    // Verifica se todos os dígitos são iguais
+    if (RegExp(r'^(\d)\1*$').hasMatch(cpf)) return false;
+
+    return true; // Simplificado - adicionar validação completa de CPF em produção
+  }
+
+  void _salvarCadastro() {
     if (_formKey.currentState!.validate()) {
+      if (_imagemPerfil == null) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Por favor, adicione uma foto de perfil'),
+            backgroundColor: Colors.orange,
+          ),
+        );
+        return;
+      }
+
       setState(() {
         _isLoading = true;
       });
 
-      // Simula cadastro (aqui você conectaria com backend/Firebase)
-      await Future.delayed(const Duration(seconds: 2));
+      // Simular salvamento (substituir por integração com backend)
+      Future.delayed(const Duration(seconds: 2), () {
+        setState(() {
+          _isLoading = false;
+        });
 
-      setState(() {
-        _isLoading = false;
-      });
-
-      if (mounted) {
-        // Mostra diálogo de sucesso
         showDialog(
           context: context,
           barrierDismissible: false,
           builder: (context) => AlertDialog(
-            title: const Row(
+            title: const Text('✅ Cadastro Realizado'),
+            content: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Icon(Icons.check_circle, color: Colors.green, size: 32),
-                SizedBox(width: 12),
-                Text('Sucesso!'),
+                const Text('Motoboy cadastrado com sucesso!'),
+                const SizedBox(height: 16),
+                Text(
+                  'Nome: ${_nomeController.text}',
+                  style: const TextStyle(fontWeight: FontWeight.bold),
+                ),
+                Text('CPF: ${_cpfController.text}'),
+                Text('Veículo: $_tipoVeiculo'),
+                if (_tipoVeiculo != 'Bicicleta') ...[
+                  Text('Modelo: ${_modeloVeiculoController.text}'),
+                  Text('Placa: ${_placaVeiculoController.text}'),
+                ],
               ],
-            ),
-            content: const Text(
-              'Cadastro realizado com sucesso!\n\nAgora você pode fazer login com seu e-mail e senha.',
             ),
             actions: [
               ElevatedButton(
                 onPressed: () {
-                  Navigator.pop(context); // Fecha o diálogo
-                  Navigator.pop(context); // Volta para login
+                  Navigator.pop(context); // Fecha o dialog
+                  Navigator.pop(context); // Volta para o dashboard
                 },
-                style: ElevatedButton.styleFrom(
-                  backgroundColor: Colors.orange,
-                  foregroundColor: Colors.white,
+                style: ElevatedButton.styleFrom(backgroundColor: Colors.orange),
+                child: const Text(
+                  'Voltar ao Dashboard',
+                  style: TextStyle(color: Colors.white),
                 ),
-                child: const Text('Fazer Login'),
               ),
             ],
           ),
         );
-      }
+      });
     }
+  }
+
+  Widget _buildFotoPerfil() {
+    return Center(
+      child: Stack(
+        children: [
+          GestureDetector(
+            onTap: _mostrarOpcoesImagem,
+            child: Container(
+              width: 140,
+              height: 140,
+              decoration: BoxDecoration(
+                shape: BoxShape.circle,
+                color: Colors.grey[200],
+                border: Border.all(color: Colors.orange, width: 3),
+              ),
+              child: _imagemPerfil != null
+                  ? ClipOval(
+                      child: Image.file(_imagemPerfil!, fit: BoxFit.cover),
+                    )
+                  : Icon(Icons.person, size: 70, color: Colors.grey[400]),
+            ),
+          ),
+          Positioned(
+            bottom: 0,
+            right: 0,
+            child: GestureDetector(
+              onTap: _mostrarOpcoesImagem,
+              child: Container(
+                padding: const EdgeInsets.all(8),
+                decoration: const BoxDecoration(
+                  color: Colors.orange,
+                  shape: BoxShape.circle,
+                ),
+                child: const Icon(
+                  Icons.camera_alt,
+                  color: Colors.white,
+                  size: 24,
+                ),
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
   }
 
   @override
@@ -116,380 +253,323 @@ class _CadastroPageState extends State<CadastroPage> {
     return Scaffold(
       appBar: AppBar(
         title: const Text('Cadastro de Motoboy'),
-        centerTitle: true,
         backgroundColor: Colors.orange,
-        foregroundColor: Colors.white,
       ),
-      body: SingleChildScrollView(
-        padding: const EdgeInsets.all(24.0),
-        child: Form(
-          key: _formKey,
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.stretch,
-            children: [
-              // Ícone e título
-              const Icon(Icons.two_wheeler, size: 80, color: Colors.orange),
-              const SizedBox(height: 8),
-              const Text(
-                'Preencha seus dados',
-                textAlign: TextAlign.center,
-                style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold),
-              ),
-              const SizedBox(height: 32),
-
-              // SEÇÃO: DADOS PESSOAIS
-              _buildSectionTitle('👤 Dados Pessoais'),
-              const SizedBox(height: 16),
-
-              // Nome completo
-              TextFormField(
-                controller: _nomeController,
-                decoration: const InputDecoration(
-                  labelText: 'Nome Completo',
-                  prefixIcon: Icon(Icons.person),
-                  border: OutlineInputBorder(),
-                  hintText: 'João Silva Santos',
-                ),
-                textCapitalization: TextCapitalization.words,
-                validator: (value) {
-                  if (value == null || value.isEmpty) {
-                    return 'Digite seu nome completo';
-                  }
-                  if (value.split(' ').length < 2) {
-                    return 'Digite nome e sobrenome';
-                  }
-                  return null;
-                },
-              ),
-              const SizedBox(height: 16),
-
-              // CPF
-              TextFormField(
-                controller: _cpfController,
-                decoration: const InputDecoration(
-                  labelText: 'CPF',
-                  prefixIcon: Icon(Icons.badge),
-                  border: OutlineInputBorder(),
-                  hintText: '000.000.000-00',
-                ),
-                keyboardType: TextInputType.number,
-                inputFormatters: [
-                  FilteringTextInputFormatter.digitsOnly,
-                  LengthLimitingTextInputFormatter(11),
+      body: _isLoading
+          ? const Center(
+              child: Column(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  CircularProgressIndicator(),
+                  SizedBox(height: 16),
+                  Text('Salvando cadastro...'),
                 ],
-                validator: (value) {
-                  if (value == null || value.isEmpty) {
-                    return 'Digite seu CPF';
-                  }
-                  if (!_validarCPF(value)) {
-                    return 'CPF inválido';
-                  }
-                  return null;
-                },
               ),
-              const SizedBox(height: 16),
+            )
+          : Form(
+              key: _formKey,
+              child: ListView(
+                padding: const EdgeInsets.all(16),
+                children: [
+                  // Foto de Perfil
+                  const SizedBox(height: 20),
+                  _buildFotoPerfil(),
+                  const SizedBox(height: 10),
+                  const Text(
+                    'Toque na foto para adicionar',
+                    textAlign: TextAlign.center,
+                    style: TextStyle(color: Colors.grey),
+                  ),
+                  const SizedBox(height: 30),
 
-              // Telefone
-              TextFormField(
-                controller: _telefoneController,
-                decoration: const InputDecoration(
-                  labelText: 'Telefone/WhatsApp',
-                  prefixIcon: Icon(Icons.phone),
-                  border: OutlineInputBorder(),
-                  hintText: '(31) 99999-9999',
-                ),
-                keyboardType: TextInputType.phone,
-                inputFormatters: [
-                  FilteringTextInputFormatter.digitsOnly,
-                  LengthLimitingTextInputFormatter(11),
-                ],
-                validator: (value) {
-                  if (value == null || value.isEmpty) {
-                    return 'Digite seu telefone';
-                  }
-                  if (value.length < 10) {
-                    return 'Telefone inválido';
-                  }
-                  return null;
-                },
-              ),
-              const SizedBox(height: 16),
-
-              // Email
-              TextFormField(
-                controller: _emailController,
-                decoration: const InputDecoration(
-                  labelText: 'E-mail',
-                  prefixIcon: Icon(Icons.email),
-                  border: OutlineInputBorder(),
-                  hintText: 'seuemail@exemplo.com',
-                ),
-                keyboardType: TextInputType.emailAddress,
-                validator: (value) {
-                  if (value == null || value.isEmpty) {
-                    return 'Digite seu e-mail';
-                  }
-                  if (!_validarEmail(value)) {
-                    return 'E-mail inválido';
-                  }
-                  return null;
-                },
-              ),
-              const SizedBox(height: 16),
-
-              // Senha
-              TextFormField(
-                controller: _senhaController,
-                decoration: InputDecoration(
-                  labelText: 'Senha',
-                  prefixIcon: const Icon(Icons.lock),
-                  border: const OutlineInputBorder(),
-                  hintText: 'Mínimo 6 caracteres',
-                  suffixIcon: IconButton(
-                    icon: Icon(
-                      _senhaVisivel ? Icons.visibility : Icons.visibility_off,
+                  // Nome Completo
+                  TextFormField(
+                    controller: _nomeController,
+                    decoration: const InputDecoration(
+                      labelText: 'Nome Completo *',
+                      border: OutlineInputBorder(),
+                      prefixIcon: Icon(Icons.person_outline),
                     ),
-                    onPressed: () {
-                      setState(() {
-                        _senhaVisivel = !_senhaVisivel;
-                      });
+                    textCapitalization: TextCapitalization.words,
+                    validator: (value) {
+                      if (value == null || value.trim().isEmpty) {
+                        return 'Por favor, informe o nome completo';
+                      }
+                      if (value.trim().split(' ').length < 2) {
+                        return 'Por favor, informe o nome completo';
+                      }
+                      return null;
                     },
                   ),
-                ),
-                obscureText: !_senhaVisivel,
-                validator: (value) {
-                  if (value == null || value.isEmpty) {
-                    return 'Digite uma senha';
-                  }
-                  if (value.length < 6) {
-                    return 'Senha deve ter no mínimo 6 caracteres';
-                  }
-                  return null;
-                },
-              ),
-              const SizedBox(height: 16),
+                  const SizedBox(height: 16),
 
-              // Confirmar senha
-              TextFormField(
-                controller: _confirmarSenhaController,
-                decoration: InputDecoration(
-                  labelText: 'Confirmar Senha',
-                  prefixIcon: const Icon(Icons.lock_outline),
-                  border: const OutlineInputBorder(),
-                  suffixIcon: IconButton(
-                    icon: Icon(
-                      _confirmarSenhaVisivel
-                          ? Icons.visibility
-                          : Icons.visibility_off,
+                  // CPF
+                  TextFormField(
+                    controller: _cpfController,
+                    decoration: const InputDecoration(
+                      labelText: 'CPF *',
+                      border: OutlineInputBorder(),
+                      prefixIcon: Icon(Icons.badge_outlined),
+                      hintText: '000.000.000-00',
                     ),
-                    onPressed: () {
-                      setState(() {
-                        _confirmarSenhaVisivel = !_confirmarSenhaVisivel;
-                      });
+                    keyboardType: TextInputType.number,
+                    inputFormatters: [
+                      FilteringTextInputFormatter.digitsOnly,
+                      LengthLimitingTextInputFormatter(11),
+                    ],
+                    onChanged: (value) {
+                      final formatted = _formatarCPF(value);
+                      _cpfController.value = TextEditingValue(
+                        text: formatted,
+                        selection: TextSelection.collapsed(
+                          offset: formatted.length,
+                        ),
+                      );
+                    },
+                    validator: (value) {
+                      if (value == null || value.isEmpty) {
+                        return 'Por favor, informe o CPF';
+                      }
+                      if (!_validarCPF(value)) {
+                        return 'CPF inválido';
+                      }
+                      return null;
                     },
                   ),
-                ),
-                obscureText: !_confirmarSenhaVisivel,
-                validator: (value) {
-                  if (value == null || value.isEmpty) {
-                    return 'Confirme sua senha';
-                  }
-                  if (value != _senhaController.text) {
-                    return 'As senhas não coincidem';
-                  }
-                  return null;
-                },
-              ),
-              const SizedBox(height: 32),
+                  const SizedBox(height: 16),
 
-              // SEÇÃO: DADOS DO VEÍCULO
-              _buildSectionTitle('🏍️ Dados do Veículo'),
-              const SizedBox(height: 16),
-
-              // Placa da moto
-              TextFormField(
-                controller: _placaMotoController,
-                decoration: const InputDecoration(
-                  labelText: 'Placa da Moto',
-                  prefixIcon: Icon(Icons.pin),
-                  border: OutlineInputBorder(),
-                  hintText: 'ABC1D23',
-                ),
-                textCapitalization: TextCapitalization.characters,
-                inputFormatters: [
-                  LengthLimitingTextInputFormatter(7),
-                  FilteringTextInputFormatter.allow(RegExp(r'[A-Za-z0-9]')),
-                ],
-                validator: (value) {
-                  if (value == null || value.isEmpty) {
-                    return 'Digite a placa da moto';
-                  }
-                  if (value.length != 7) {
-                    return 'Placa deve ter 7 caracteres';
-                  }
-                  return null;
-                },
-              ),
-              const SizedBox(height: 16),
-
-              // Modelo da moto
-              TextFormField(
-                controller: _modeloMotoController,
-                decoration: const InputDecoration(
-                  labelText: 'Modelo da Moto',
-                  prefixIcon: Icon(Icons.two_wheeler),
-                  border: OutlineInputBorder(),
-                  hintText: 'Ex: Honda CG 160',
-                ),
-                textCapitalization: TextCapitalization.words,
-                validator: (value) {
-                  if (value == null || value.isEmpty) {
-                    return 'Digite o modelo da moto';
-                  }
-                  return null;
-                },
-              ),
-              const SizedBox(height: 16),
-
-              // CNH
-              TextFormField(
-                controller: _cnhController,
-                decoration: const InputDecoration(
-                  labelText: 'Número da CNH',
-                  prefixIcon: Icon(Icons.credit_card),
-                  border: OutlineInputBorder(),
-                  hintText: '11 dígitos',
-                ),
-                keyboardType: TextInputType.number,
-                inputFormatters: [
-                  FilteringTextInputFormatter.digitsOnly,
-                  LengthLimitingTextInputFormatter(11),
-                ],
-                validator: (value) {
-                  if (value == null || value.isEmpty) {
-                    return 'Digite o número da CNH';
-                  }
-                  if (value.length != 11) {
-                    return 'CNH deve ter 11 dígitos';
-                  }
-                  return null;
-                },
-              ),
-              const SizedBox(height: 24),
-
-              // Checkbox de termos
-              Container(
-                padding: const EdgeInsets.all(12),
-                decoration: BoxDecoration(
-                  color: Colors.orange[50],
-                  borderRadius: BorderRadius.circular(8),
-                  border: Border.all(
-                    color: _aceitouTermos ? Colors.orange : Colors.grey[300]!,
-                  ),
-                ),
-                child: Row(
-                  children: [
-                    Checkbox(
-                      value: _aceitouTermos,
-                      onChanged: (value) {
-                        setState(() {
-                          _aceitouTermos = value ?? false;
-                        });
-                      },
-                      activeColor: Colors.orange,
+                  // Telefone
+                  TextFormField(
+                    controller: _telefoneController,
+                    decoration: const InputDecoration(
+                      labelText: 'Telefone *',
+                      border: OutlineInputBorder(),
+                      prefixIcon: Icon(Icons.phone_outlined),
+                      hintText: '(00) 00000-0000',
                     ),
-                    Expanded(
-                      child: GestureDetector(
-                        onTap: () {
-                          setState(() {
-                            _aceitouTermos = !_aceitouTermos;
-                          });
-                        },
-                        child: const Text(
-                          'Li e aceito os Termos de Uso e Política de Privacidade',
-                          style: TextStyle(fontSize: 13),
+                    keyboardType: TextInputType.phone,
+                    inputFormatters: [
+                      FilteringTextInputFormatter.digitsOnly,
+                      LengthLimitingTextInputFormatter(11),
+                    ],
+                    onChanged: (value) {
+                      final formatted = _formatarTelefone(value);
+                      _telefoneController.value = TextEditingValue(
+                        text: formatted,
+                        selection: TextSelection.collapsed(
+                          offset: formatted.length,
+                        ),
+                      );
+                    },
+                    validator: (value) {
+                      if (value == null || value.isEmpty) {
+                        return 'Por favor, informe o telefone';
+                      }
+                      final digits = value.replaceAll(RegExp(r'\D'), '');
+                      if (digits.length < 10) {
+                        return 'Telefone inválido';
+                      }
+                      return null;
+                    },
+                  ),
+                  const SizedBox(height: 16),
+
+                  // Email
+                  TextFormField(
+                    controller: _emailController,
+                    decoration: const InputDecoration(
+                      labelText: 'Email',
+                      border: OutlineInputBorder(),
+                      prefixIcon: Icon(Icons.email_outlined),
+                      hintText: 'seu@email.com',
+                    ),
+                    keyboardType: TextInputType.emailAddress,
+                    validator: (value) {
+                      if (value != null && value.isNotEmpty) {
+                        if (!RegExp(
+                          r'^[\w-\.]+@([\w-]+\.)+[\w-]{2,4}$',
+                        ).hasMatch(value)) {
+                          return 'Email inválido';
+                        }
+                      }
+                      return null;
+                    },
+                  ),
+                  const SizedBox(height: 24),
+
+                  // Tipo de Veículo
+                  const Text(
+                    'Tipo de Veículo *',
+                    style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
+                  ),
+                  const SizedBox(height: 12),
+
+                  Row(
+                    children: [
+                      Expanded(
+                        child: _buildTipoVeiculoCard('Moto', Icons.two_wheeler),
+                      ),
+                      const SizedBox(width: 8),
+                      Expanded(
+                        child: _buildTipoVeiculoCard(
+                          'Carro',
+                          Icons.directions_car,
                         ),
                       ),
+                      const SizedBox(width: 8),
+                      Expanded(
+                        child: _buildTipoVeiculoCard(
+                          'Bicicleta',
+                          Icons.pedal_bike,
+                        ),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 24),
+
+                  // Campos adicionais para Carro/Moto
+                  if (_tipoVeiculo != 'Bicicleta') ...[
+                    const Divider(),
+                    const SizedBox(height: 16),
+                    const Text(
+                      'Informações do Veículo',
+                      style: TextStyle(
+                        fontSize: 16,
+                        fontWeight: FontWeight.bold,
+                      ),
+                    ),
+                    const SizedBox(height: 16),
+
+                    // Modelo do Veículo
+                    TextFormField(
+                      controller: _modeloVeiculoController,
+                      decoration: InputDecoration(
+                        labelText: 'Modelo do ${_tipoVeiculo} *',
+                        border: const OutlineInputBorder(),
+                        prefixIcon: const Icon(Icons.directions_car_outlined),
+                        hintText: 'Ex: Honda CG 160, Fiat Uno',
+                      ),
+                      textCapitalization: TextCapitalization.words,
+                      validator: (value) {
+                        if (_tipoVeiculo != 'Bicicleta' &&
+                            (value == null || value.isEmpty)) {
+                          return 'Por favor, informe o modelo do veículo';
+                        }
+                        return null;
+                      },
+                    ),
+                    const SizedBox(height: 16),
+
+                    // Placa do Veículo
+                    TextFormField(
+                      controller: _placaVeiculoController,
+                      decoration: const InputDecoration(
+                        labelText: 'Placa do Veículo *',
+                        border: OutlineInputBorder(),
+                        prefixIcon: Icon(Icons.confirmation_number_outlined),
+                        hintText: 'ABC-1234',
+                      ),
+                      textCapitalization: TextCapitalization.characters,
+                      inputFormatters: [
+                        FilteringTextInputFormatter.allow(
+                          RegExp(r'[A-Za-z0-9]'),
+                        ),
+                        LengthLimitingTextInputFormatter(7),
+                      ],
+                      onChanged: (value) {
+                        final formatted = _formatarPlaca(value);
+                        _placaVeiculoController.value = TextEditingValue(
+                          text: formatted,
+                          selection: TextSelection.collapsed(
+                            offset: formatted.length,
+                          ),
+                        );
+                      },
+                      validator: (value) {
+                        if (_tipoVeiculo != 'Bicicleta' &&
+                            (value == null || value.isEmpty)) {
+                          return 'Por favor, informe a placa do veículo';
+                        }
+                        if (value != null && value.isNotEmpty) {
+                          final placa = value.replaceAll(RegExp(r'\D'), '');
+                          if (placa.length < 7) {
+                            return 'Placa inválida';
+                          }
+                        }
+                        return null;
+                      },
                     ),
                   ],
-                ),
-              ),
-              const SizedBox(height: 24),
 
-              // Botão de cadastrar
-              SizedBox(
-                height: 56,
-                child: ElevatedButton(
-                  onPressed: _isLoading ? null : _realizarCadastro,
-                  style: ElevatedButton.styleFrom(
-                    backgroundColor: Colors.orange,
-                    foregroundColor: Colors.white,
-                    shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(12),
+                  const SizedBox(height: 32),
+
+                  // Botão Salvar
+                  ElevatedButton(
+                    onPressed: _salvarCadastro,
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: Colors.orange,
+                      padding: const EdgeInsets.all(16),
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(8),
+                      ),
                     ),
-                    elevation: 3,
+                    child: const Text(
+                      'SALVAR CADASTRO',
+                      style: TextStyle(
+                        fontSize: 16,
+                        fontWeight: FontWeight.bold,
+                        color: Colors.white,
+                      ),
+                    ),
                   ),
-                  child: _isLoading
-                      ? const SizedBox(
-                          height: 24,
-                          width: 24,
-                          child: CircularProgressIndicator(
-                            strokeWidth: 2.5,
-                            valueColor: AlwaysStoppedAnimation<Color>(
-                              Colors.white,
-                            ),
-                          ),
-                        )
-                      : const Text(
-                          'CADASTRAR',
-                          style: TextStyle(
-                            fontSize: 18,
-                            fontWeight: FontWeight.bold,
-                          ),
-                        ),
-                ),
+                  const SizedBox(height: 20),
+                ],
               ),
-              const SizedBox(height: 16),
-
-              // Botão voltar
-              TextButton(
-                onPressed: () {
-                  Navigator.pop(context);
-                },
-                child: const Text(
-                  'Já tem cadastro? Fazer login',
-                  style: TextStyle(fontSize: 15),
-                ),
-              ),
-              const SizedBox(height: 24),
-            ],
-          ),
-        ),
-      ),
+            ),
     );
   }
 
-  Widget _buildSectionTitle(String title) {
-    return Row(
-      children: [
-        Container(
-          width: 4,
-          height: 24,
-          decoration: BoxDecoration(
-            color: Colors.orange,
-            borderRadius: BorderRadius.circular(2),
+  Widget _buildTipoVeiculoCard(String tipo, IconData icon) {
+    final isSelected = _tipoVeiculo == tipo;
+
+    return GestureDetector(
+      onTap: () {
+        setState(() {
+          _tipoVeiculo = tipo;
+          if (tipo == 'Bicicleta') {
+            _modeloVeiculoController.clear();
+            _placaVeiculoController.clear();
+          }
+        });
+      },
+      child: Container(
+        padding: const EdgeInsets.symmetric(vertical: 16),
+        decoration: BoxDecoration(
+          color: isSelected ? Colors.orange : Colors.grey[200],
+          borderRadius: BorderRadius.circular(12),
+          border: Border.all(
+            color: isSelected ? Colors.orange : Colors.grey[300]!,
+            width: 2,
           ),
         ),
-        const SizedBox(width: 8),
-        Text(
-          title,
-          style: const TextStyle(
-            fontSize: 18,
-            fontWeight: FontWeight.bold,
-            color: Colors.orange,
-          ),
+        child: Column(
+          children: [
+            Icon(
+              icon,
+              size: 40,
+              color: isSelected ? Colors.white : Colors.grey[600],
+            ),
+            const SizedBox(height: 8),
+            Text(
+              tipo,
+              style: TextStyle(
+                color: isSelected ? Colors.white : Colors.grey[600],
+                fontWeight: FontWeight.bold,
+              ),
+            ),
+          ],
         ),
-      ],
+      ),
     );
   }
 }
